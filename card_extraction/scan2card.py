@@ -1,4 +1,6 @@
 import os
+import json
+import argparse
 from pathlib import Path
 from typing import Tuple
 
@@ -9,11 +11,22 @@ from utils import *
 
 
 current_path = Path(".").absolute()
-input_path = current_path / "input"
-output_path = current_path / "output"
+
+# ===== Argument Parser ===== #
+parser = argparse.ArgumentParser(
+    prog='scan2card',
+    description='What the program does',
+    epilog='Text at the bottom of help'
+)
+parser.add_argument("-i", "--input", nargs='?', help="Input directory", default=current_path / "input")
+parser.add_argument("-o", "--output", nargs='?', help="Output directory", default=current_path / "output")
+parser.add_argument("--process-all", action="store_true")
+parser.add_argument("-v", "--verbose", action="store_true")
 
 DEBUGGING = 0
-TEST_FILE = input_path / "Б" / "б004.jpg"
+
+VERBOSE = False
+verbose_print = lambda *args, **kwargs: VERBOSE and print(*args, **kwargs)
 
 
 def get_hsv_bounds(color) -> Tuple[np.uint8, np.uint8]:
@@ -28,7 +41,7 @@ def get_hsv_bounds(color) -> Tuple[np.uint8, np.uint8]:
 
 
 def get_card_mask(img, bg_color) -> np.ndarray:
-# 1. Convert image BGR to HSV
+    # 1. Convert image BGR to HSV
     hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
     # 2. Get lower and upper bound of background color
@@ -188,38 +201,63 @@ def process_scan(img: cv2.typing.MatLike) -> list[cv2.typing.MatLike]:
     return card_images
 
 
-def test():
-    scan = read_file(TEST_FILE)
-    process_scan(scan)
-
-    cv2.waitKey(0)
-
-
 def main():
     """ Code that separates cards on blue background """
+    global VERBOSE
 
-    if DEBUGGING:
-        test()
-        return
+    # 1. Read CLI arguments
+    args = parser.parse_args()
+    
+    input_path, output_path = Path(args.input), Path(args.output)
+    VERBOSE = args.verbose
 
-    subdir, dirs, files = next(os.walk(input_path))
+    # 2. Read processed_files.json
+    processed_files = {}
+    if (json_path := input_path / "processed_files.json").exists():
+        try:
+            with open(json_path, mode='r') as file:
+                processed_files = json.load(file)
+        except Exception as e:
+            print("Failed to load processed_files.json:", repr(e))
+
+    # 3. Walk through directories of input folder
+    _, dirs, _ = next(os.walk(input_path))
 
     for dir in dirs:
         inp = input_path / dir
         out = output_path / dir
 
         out.mkdir(parents=True, exist_ok=True)
+        verbose_print(f"Processing folder {dir}...")
 
-        i = 0
-        for file in os.listdir(inp):
-            print(inp / file)
-            scan = read_file(inp / file)
+        card_id = 0
+        for filename in os.listdir(inp):
+            # Compare file's md5 to md5 saved in processed_files, skip file if equal
+            file_path = inp / filename
+            processed_file = str(file_path.relative_to(input_path))
+            md5 = get_file_md5(file_path)
+
+            if not args.process_all and processed_file in processed_files:
+                if processed_files[processed_file] == md5:
+                    verbose_print(f"Skipping file {processed_file}.")
+                    continue
+
+            # Get cards
+            scan = read_file(file_path)
             cards = process_scan(scan)
 
-            print(len(cards))
+            # Write cards to files
             for card in cards:
-                write_file(out / f"{i}.jpg", card)
-                i += 1
+                write_file(out / f"{card_id}.jpg", card)
+                card_id += 1
+            
+            # Mark as processed
+            processed_files[processed_file] = md5
+            verbose_print(f"Processed file {processed_file}, found {len(cards)} cards.")
+    
+    # 4. Save processed files and their md5 hashes into a file
+    with open(json_path, mode="w") as file:
+        json.dump(processed_files, file)
 
 
 if __name__ == "__main__":

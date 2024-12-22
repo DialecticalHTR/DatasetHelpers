@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 import cv2
@@ -33,6 +34,7 @@ def reverse_mask(mask: np.ndarray):
     mask = 255 - mask
     return mask
 
+
 def imshow_mask(mask: np.ndarray):
     if mask.ndim != 2:
         raise ValueError("mask dimension count must be 2.")
@@ -41,3 +43,13 @@ def imshow_mask(mask: np.ndarray):
     preview[mask == 255] = [255] * 3
 
     cv2.imshow("Mask Preview", mask)
+
+
+def get_file_md5(path: Path) -> str:
+    md5 = hashlib.md5()
+
+    with open(path, mode="rb") as file:
+        while chunk := file.read(md5.block_size):
+            md5.update(chunk)
+    
+    return md5.hexdigest()

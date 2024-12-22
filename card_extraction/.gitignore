@@ -1,2 +1,3 @@
 ./output
 __pycache__
+processed_files.json
