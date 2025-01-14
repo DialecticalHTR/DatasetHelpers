@@ -59,7 +59,6 @@ class TrOCRBuilder(Builder):
                     _, image_buffer = cv2.imencode('.jpg', image_part)
                     image_bytes = image_buffer.tobytes()
 
-                    # image_buffer.tofile(image_path / filename)
                     for exporter in exporters:
                         exporter.export_bytes(image_bytes, f"images/{region.id}.jpg")
 
@@ -69,8 +68,8 @@ class TrOCRBuilder(Builder):
                         'text': region.text
                     })
         
-        with io.StringIO() as csv_data:
-            csv_writer = csv.DictWriter(csv_data, 
+        with io.StringIO() as csv_file:
+            csv_writer = csv.DictWriter(csv_file, 
                                         fieldnames=['image', 'text'], 
                                         delimiter=';', 
                                         dialect='unix',
@@ -78,10 +77,12 @@ class TrOCRBuilder(Builder):
                                         quoting=csv.QUOTE_NONE)
             csv_writer.writeheader()
             csv_writer.writerows(data)
-
-            csv_data.seek(0)
-            for exporter in exporters:
-                exporter.export_file(csv_data, 'data.csv')
+            csv_file.seek(0)
+            csv_data = csv_file.read()
+        
+        csv_bytes = csv_data.encode(encoding='utf-8')
+        for exporter in exporters:
+            exporter.export_bytes(csv_bytes, 'data.csv')
 
 
 __all__ = [
