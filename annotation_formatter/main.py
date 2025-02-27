@@ -17,7 +17,7 @@ def main():
         prog='to_trocr',
         description='Converts Label Studio annotations to a dataset'
     )
-    parser.add_argument("--from", nargs=2, metavar=("TYPE", "VALUE"))
+    parser.add_argument("--from", nargs=2, metavar=("TYPE", "VALUE"), action='append')
     parser.add_argument('--to', nargs=2, metavar=("TYPE", "VALUE"), action='append')
     parser.add_argument('--data', choices=['trocr'], default='trocr')
     args = parser.parse_args()
@@ -35,18 +35,20 @@ def main():
     s3_context = S3Context(s3_connection, s3_credentials)
 
     # 2. Get task annotations
-    match (_from := getattr(args, 'from')):
-        case ['s3', s3_url]:
-            tasks = S3AnnotationLoader(s3_context).get_tasks(s3_url)
-        case ['export', json_filepath]:
-            tasks = ExportAnnotationLoader().get_tasks(json_filepath)
-        case _:
-            raise ValueError(f'Unknown data source {_from[0]}')
+    tasks: List[Task] = []
+    for loader in (_from := getattr(args, 'from')):
+        match loader:
+            case ['s3', s3_url]:
+                loader_tasks = S3AnnotationLoader(s3_context).get_tasks(s3_url)
+            case ['export', json_filepath]:
+                loader_tasks = ExportAnnotationLoader().get_tasks(json_filepath)
+            case _:
+                raise ValueError(f'Unknown data source {_from[0]}')
+        tasks.extend(loader_tasks)
     
     # 3. Prepare exporters
     exporters: List[Exporter] = []
     for output in (to := args.to):
-        print(output)
         match output:
             case ['s3', s3_url]:
                 exporter = S3Exporter(s3_context, s3_url)
